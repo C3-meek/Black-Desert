@@ -1,12 +1,10 @@
 <!-- 構造: <!DOCTYPE html>〜</html> まで完全なファイル -->
 <!-- 変更点:
-  - 【バグ修正】initStepMatDragSort の cloneNode+replaceWith を廃止し
-    _dragInitialized フラグで二重登録を防ぐ方式に変更
-    → cloneNode により input の value attribute がリセットされ
-      保存時に乗算済みの値が qty として送られていた問題を解消
-  - 【バグ修正】smat-qty input に data-base-qty 属性を追加し
-    collectData では data-base-qty を優先参照するよう変更
-  - その他（画像アップロード、skill_level、recipe_proc、RLS 等）は既存のまま維持
+  - 【仕様変更】製作材料（Step2）の最大数を 6種 → 10種 に拡張
+    ・MAX_BASIC_MATS を 6 → 10
+    ・Step2 見出しの「最大6種」表記を「最大10種」に変更
+    ・上限到達時のトースト「材料は最大6種までです」を「最大10種」に変更
+  - その他（initStepMatDragSort の _dragInitialized、data-base-qty、画像アップロード、skill_level、recipe_proc、RLS 等）は既存のまま維持
 -->
 <!doctype html>
 <html lang="ja">
@@ -708,7 +706,7 @@
           <div class="card">
             <div class="card-title">
               <span class="num">2</span>製作材料
-              <span style="font-size:11px;font-weight:400;color:#aaa;margin-left:auto">最大6種 ／ 各材料に代替品を追加可</span>
+              <span style="font-size:11px;font-weight:400;color:#aaa;margin-left:auto">最大10種 ／ 各材料に代替品を追加可</span>
             </div>
             <div id="mat-block-list"></div>
             <button class="add-btn" id="add-mat-btn" onclick="addMatBlock()">＋ 材料を追加</button>
@@ -795,8 +793,9 @@
       const CONNECTORS     = ["↓", "あるいは", "または", "さらに"];
       const ALT_CONNECTORS = ["あるいは", "または", "もしくは"];
 
+      // ★ 製作材料の最大数を 6 → 10 に拡張
       const MAX_GROUPS = 15, MAX_STEPS = 10, MAX_MATS = 10,
-            MAX_BASIC_MATS = 6, MAX_CITIES = 10, MAX_ALTS = 3;
+            MAX_BASIC_MATS = 10, MAX_CITIES = 10, MAX_ALTS = 3;
 
       let matBlockCount = 0, subgroupCount = 0;
       let stepCounters = {}, stepMatCounters = {}, stepMatAltCounters = {};
@@ -1500,7 +1499,7 @@
       // 製作材料ブロック（Step2）
       // ============================================================
       function addMatBlock(matName, matQty, alts) {
-        if (matBlockCount >= MAX_BASIC_MATS) { showToast("材料は最大6種までです"); return; }
+        if (matBlockCount >= MAX_BASIC_MATS) { showToast("材料は最大10種までです"); return; }
         matBlockCount++;
         const bid = `mb-${matBlockCount}`;
         altCounts[bid] = 0;
@@ -2107,6 +2106,7 @@
         matBlockCount = 0; subgroupCount = 0; stepCounters = {}; stepMatCounters = {}; stepMatAltCounters = {};
         for (const k in altCounts) delete altCounts[k];
         _stepDrag = null;
+        document.getElementById("add-mat-btn").style.display = "";
         addMatBlock(); goStep(1);
       }
 
@@ -2198,6 +2198,7 @@
         matBlockCount = 0; subgroupCount = 0; stepCounters = {}; stepMatCounters = {}; stepMatAltCounters = {};
         for (const k in altCounts) delete altCounts[k];
         _stepDrag = null;
+        document.getElementById("add-mat-btn").style.display = "";
         document.getElementById("f-sheet").value    = sheetName;
         document.getElementById("f-name").value     = data.name     || "";
         document.getElementById("f-category").value = data.category || "";
@@ -2274,6 +2275,7 @@
         document.getElementById("mat-block-list").innerHTML = ""; document.getElementById("subgroup-list").innerHTML = "";
         matBlockCount = 0; subgroupCount = 0; stepCounters = {}; stepMatCounters = {}; stepMatAltCounters = {};
         for (const k in altCounts) delete altCounts[k];
+        document.getElementById("add-mat-btn").style.display = "";
         addMatBlock(); goStep(1);
         document.getElementById("edit-list").style.display = "";
         document.getElementById("edit-search").parentElement.style.display = "";
