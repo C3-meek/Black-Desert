@@ -1,10 +1,9 @@
 <!-- 構造: <!DOCTYPE html>〜</html> まで完全なファイル -->
 <!-- 変更点:
-  - 【バグ修正】EFFECT_SHEET_NAMES に "錬金" を追加
-    → 錬金シートのレシピでも「🍽 効果 / 👑 皇室納品」欄に効果テキストが表示されるように修正
-    （従来は料理シートのみが対象になっており、錬金の effect がフォームに入力されていても
-      parseRecipe() 内で hasEffect が false となり "" に潰されて表示されない不具合があった）
-  - その他は既存のまま維持
+  - fmtQty の表示形式を「×必要数」→「基準値×作成数＝必要数」に変更
+  - 製作材料列のヘッダーに「基準値×作成数＝必要数」の説明を追加
+  - sub-step内の材料数量表示も同様に変更
+  ※ その他は既存のまま維持
 -->
 <!doctype html>
 <html lang="ja">
@@ -14,136 +13,597 @@
     <title>黒い砂漠 加工・製作レシピ検索</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-      * { box-sizing: border-box; margin: 0; padding: 0; }
-      body { font-family: "Noto Sans JP", "Hiragino Sans", sans-serif; background: #f5f4f0; color: #1a1a1a; min-height: 100vh; }
-      header { background: #fff; border-bottom: 1px solid #e0ddd5; padding: 14px 24px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 10; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
-      .header-logo { font-size: 10px; letter-spacing: 0.12em; color: #aaa; text-transform: uppercase; }
-      .header-title { font-size: 18px; font-weight: 700; color: #1a1a1a; }
-      .header-right { margin-left: auto; font-size: 12px; color: #999; }
-      .controls-row1 { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 24px; background: #fff; border-bottom: 0.5px solid #f0ede8; }
-      .controls-row2 { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 24px 10px; background: #faf9f6; border-bottom: 1px solid #e8e6e0; }
-      .controls-row2 .cat-btn { font-size: 11px; padding: 4px 12px; border-radius: 20px; }
-      .controls-row2 .cat-btn.active { background: #555; border-color: #555; }
-      .search-wrap { position: relative; flex: 1; min-width: 200px; }
-      .search-wrap::before { content: "🔍"; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 13px; pointer-events: none; z-index: 1; }
-      input[type="text"] { width: 100%; padding: 8px 36px 8px 32px; background: #f5f4f0; border: 1px solid #ddd; border-radius: 8px; color: #1a1a1a; font-size: 14px; outline: none; transition: border-color 0.2s; }
-      input[type="text"]:focus { border-color: #888; background: #fff; }
-      input[type="text"]::placeholder { color: #bbb; }
-      .search-clear-btn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; border-radius: 50%; border: none; background: #ccc; color: #fff; font-size: 12px; line-height: 1; cursor: pointer; display: none; align-items: center; justify-content: center; padding: 0; transition: background 0.15s; z-index: 2; }
-      .search-clear-btn:hover { background: #888; }
-      .search-clear-btn.visible { display: flex; }
-      .cat-btn { padding: 6px 14px; border: 1px solid #ddd; border-radius: 20px; background: #fff; color: #666; font-size: 12px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
-      .cat-btn:hover { border-color: #888; color: #1a1a1a; }
-      .cat-btn.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; font-weight: 600; }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: "Noto Sans JP", "Hiragino Sans", sans-serif;
+        background: #f5f4f0;
+        color: #1a1a1a;
+        min-height: 100vh;
+      }
+      header {
+        background: #fff;
+        border-bottom: 1px solid #e0ddd5;
+        padding: 14px 24px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+      }
+      .header-logo {
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        color: #aaa;
+        text-transform: uppercase;
+      }
+      .header-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: #1a1a1a;
+      }
+      .header-right {
+        margin-left: auto;
+        font-size: 12px;
+        color: #999;
+      }
+      .controls-row1 {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        padding: 12px 24px;
+        background: #fff;
+        border-bottom: 0.5px solid #f0ede8;
+      }
+      .controls-row2 {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+        padding: 8px 24px 10px;
+        background: #faf9f6;
+        border-bottom: 1px solid #e8e6e0;
+      }
+      .controls-row2 .cat-btn {
+        font-size: 11px;
+        padding: 4px 12px;
+        border-radius: 20px;
+      }
+      .controls-row2 .cat-btn.active {
+        background: #555;
+        border-color: #555;
+      }
+      .search-wrap {
+        position: relative;
+        flex: 1;
+        min-width: 200px;
+      }
+      .search-wrap::before {
+        content: "🔍";
+        position: absolute;
+        left: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 13px;
+        pointer-events: none;
+        z-index: 1;
+      }
+      input[type="text"] {
+        width: 100%;
+        padding: 8px 36px 8px 32px;
+        background: #f5f4f0;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        color: #1a1a1a;
+        font-size: 14px;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      input[type="text"]:focus {
+        border-color: #888;
+        background: #fff;
+      }
+      input[type="text"]::placeholder {
+        color: #bbb;
+      }
+      .search-clear-btn {
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: none;
+        background: #ccc;
+        color: #fff;
+        font-size: 12px;
+        line-height: 1;
+        cursor: pointer;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        transition: background 0.15s;
+        z-index: 2;
+      }
+      .search-clear-btn:hover {
+        background: #888;
+      }
+      .search-clear-btn.visible {
+        display: flex;
+      }
+      .cat-btn {
+        padding: 6px 14px;
+        border: 1px solid #ddd;
+        border-radius: 20px;
+        background: #fff;
+        color: #666;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.15s;
+        white-space: nowrap;
+      }
+      .cat-btn:hover {
+        border-color: #888;
+        color: #1a1a1a;
+      }
+      .cat-btn.active {
+        background: #1a1a1a;
+        color: #fff;
+        border-color: #1a1a1a;
+        font-weight: 600;
+      }
 
-      /* 上に戻るボタン（画面右下固定） */
+      /* ★ 上に戻るボタン（画面右下固定） */
       #scroll-top-btn {
-        position: fixed; bottom: 28px; right: 28px; z-index: 999;
-        display: flex; align-items: center; gap: 6px;
-        padding: 10px 20px; background: #1a1a1a; color: #fff;
-        border: none; border-radius: 24px; font-size: 13px; font-weight: 600;
-        cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,0.28);
-        opacity: 0; pointer-events: none; transform: translateY(12px);
-        transition: opacity 0.25s ease, transform 0.25s ease, background 0.15s;
+        position: fixed;
+        bottom: 28px;
+        right: 28px;
+        z-index: 999;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 10px 20px;
+        background: #1a1a1a;
+        color: #fff;
+        border: none;
+        border-radius: 24px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(12px);
+        transition:
+          opacity 0.25s ease,
+          transform 0.25s ease,
+          background 0.15s;
         font-family: "Noto Sans JP", "Hiragino Sans", sans-serif;
       }
-      #scroll-top-btn.visible { opacity: 1; pointer-events: auto; transform: translateY(0); }
-      #scroll-top-btn:hover { background: #444; }
-      #scroll-top-btn:active { transform: scale(0.97); }
+      #scroll-top-btn.visible {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
+      }
+      #scroll-top-btn:hover {
+        background: #444;
+      }
+      #scroll-top-btn:active {
+        transform: scale(0.97);
+      }
       @media (max-width: 600px) {
-        #scroll-top-btn { bottom: 16px; right: 16px; padding: 9px 15px; font-size: 12px; }
+        #scroll-top-btn {
+          bottom: 16px;
+          right: 16px;
+          padding: 9px 15px;
+          font-size: 12px;
+        }
       }
 
-      @media (max-width: 600px) { .controls-row1, .controls-row2 { padding: 10px 16px; } }
-      .table-container { padding: 16px 24px; overflow-x: auto; }
-      .result-info { font-size: 12px; color: #aaa; margin-bottom: 10px; }
-      table { width: 100%; border-collapse: collapse; table-layout: fixed; background: #fff; border-radius: 10px; overflow: hidden; border: 1px solid #e8e6e0; }
-      thead tr { background: #f0ede8; border-bottom: 1px solid #ddd; }
-      thead th { padding: 10px 14px; text-align: left; font-size: 12px; font-weight: 600; color: #555; letter-spacing: 0.04em; white-space: nowrap; }
-      tbody tr { border-bottom: 1px solid #f0ede8; transition: background 0.1s; }
-      tbody tr:last-child { border-bottom: none; }
-      tbody tr:hover { background: #faf9f6; }
-      tbody td { padding: 11px 14px; vertical-align: top; font-size: 13px; }
-      .item-cell { display: flex; align-items: center; gap: 10px; }
-      .item-img { width: 70px; height: 70px; border-radius: 6px; border: 1px solid #e0ddd5; background: #f5f4f0; overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 32px; }
-      .item-img img { width: 100%; height: 100%; object-fit: cover; }
-      .item-name { font-weight: 600; font-size: 13px; color: #1a1a1a; word-break: break-all; }
-      .cat-badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 10px; background: #f0ede8; color: #666; border: 1px solid #e0ddd5; margin-top: 3px; }
-      .effect-text { font-size: 11px; color: #795548; line-height: 1.6; background: #fff8e1; border: 1px solid #ffe082; border-radius: 6px; padding: 4px 8px; white-space: pre-wrap; word-break: break-all; }
-      .mat-list { display: flex; flex-direction: column; gap: 3px; }
-      .recipe-proc-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #e8eaf6; color: #3949ab; border: 1px solid #9fa8da; white-space: nowrap; margin-bottom: 6px; }
-      .mat-item { font-size: 12px; color: #555; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-      .mat-qty { color: #1a1a1a; font-weight: 600; }
-      .mat-alt { font-size: 11px; color: #3a5aad; display: flex; align-items: center; gap: 5px; padding-left: 12px; }
-      .mat-alt-connector { font-size: 10px; color: #9fa8da; white-space: nowrap; }
-      .imperial-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; background: #fff8e1; color: #e65100; border: 1px solid #ffe082; margin-top: 4px; white-space: nowrap; }
-      .imperial-qty { font-size: 11px; color: #795548; margin-top: 3px; display: flex; align-items: center; gap: 3px; }
-      .imperial-qty-num { font-weight: 700; color: #e65100; }
-      .skill-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; margin-top: 4px; white-space: nowrap; border: 1px solid; }
-      input.qty-input { width: 72px; padding: 5px 4px 5px 8px; background: #f5f4f0; border: 1px solid #ddd; border-radius: 6px; color: #1a1a1a; font-size: 13px; text-align: center; outline: none; }
-      input.qty-input:focus { border-color: #888; background: #fff; }
-      .expand-btn { padding: 5px 11px; border: 1px solid #ddd; border-radius: 6px; background: #fff; color: #888; font-size: 11px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
-      .expand-btn:hover { border-color: #888; color: #1a1a1a; }
-      .expand-btn.open { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
-      .sub-row td { background: #faf9f6; padding: 10px 14px 12px 32px; border-bottom: 1px solid #f0ede8; }
-      .sub-group { margin-bottom: 14px; }
-      .sub-group:last-child { margin-bottom: 0; }
-      .sub-parent-label { font-size: 11px; color: #aaa; margin-bottom: 7px; }
-      .sub-parent-name { color: #1a1a1a; font-weight: 600; font-size: 12px; }
-      .sub-steps { display: flex; flex-direction: column; gap: 0; padding-left: 8px; }
-      .sub-step { background: #fff; border: 0.5px solid #e8e6e0; border-radius: 6px; padding: 7px 10px; margin-bottom: 2px; }
-      .proc-badge { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 10px; background: #e8eaf6; color: #1a237e; border: 1px solid #9fa8da; margin-bottom: 4px; font-weight: 600; }
-      /* ★ 細分化ステップ材料 */
-      .step-mats { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
-
-      /* ヘッダー行: 左端から [基準値] × [作成数] ＝ [必要数] */
-      .step-mat-header {
-        display: inline-flex; align-items: center; gap: 6px;
-        padding: 0 0 3px; margin-bottom: 2px;
-        border-bottom: 1px solid #f0ede8; width: 100%;
-        font-size: 10px; color: #aaa; font-weight: 600;
+      @media (max-width: 600px) {
+        .controls-row1,
+        .controls-row2 {
+          padding: 10px 16px;
+        }
       }
-      .smh-op { color: #ccc; }
-
-      /* 材料行: inline-flex で左端から自然に並ぶ */
+      .table-container {
+        padding: 16px 24px;
+        overflow-x: auto;
+      }
+      .result-info {
+        font-size: 12px;
+        color: #aaa;
+        margin-bottom: 10px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+        background: #fff;
+        border-radius: 10px;
+        overflow: hidden;
+        border: 1px solid #e8e6e0;
+      }
+      thead tr {
+        background: #f0ede8;
+        border-bottom: 1px solid #ddd;
+      }
+      thead th {
+        padding: 10px 14px;
+        text-align: left;
+        font-size: 12px;
+        font-weight: 600;
+        color: #555;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+      }
+      tbody tr {
+        border-bottom: 1px solid #f0ede8;
+        transition: background 0.1s;
+      }
+      tbody tr:last-child {
+        border-bottom: none;
+      }
+      tbody tr:hover {
+        background: #faf9f6;
+      }
+      tbody td {
+        padding: 11px 14px;
+        vertical-align: top;
+        font-size: 13px;
+      }
+      .item-cell {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .item-img {
+        width: 70px;
+        height: 70px;
+        border-radius: 6px;
+        border: 1px solid #e0ddd5;
+        background: #f5f4f0;
+        overflow: hidden;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 32px;
+      }
+      .item-img img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .item-name {
+        font-weight: 600;
+        font-size: 13px;
+        color: #1a1a1a;
+        word-break: break-all;
+      }
+      .cat-badge {
+        display: inline-block;
+        padding: 2px 7px;
+        border-radius: 10px;
+        font-size: 10px;
+        background: #f0ede8;
+        color: #666;
+        border: 1px solid #e0ddd5;
+        margin-top: 3px;
+      }
+      .effect-text {
+        font-size: 11px;
+        color: #795548;
+        line-height: 1.6;
+        background: #fff8e1;
+        border: 1px solid #ffe082;
+        border-radius: 6px;
+        padding: 4px 8px;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .mat-list {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .recipe-proc-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        padding: 2px 10px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: 700;
+        background: #e8eaf6;
+        color: #3949ab;
+        border: 1px solid #9fa8da;
+        white-space: nowrap;
+        margin-bottom: 6px;
+      }
+      .mat-item {
+        font-size: 12px;
+        color: #555;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        flex-wrap: wrap;
+      }
+      .mat-qty {
+        color: #1a1a1a;
+        font-weight: 600;
+      }
+      /* ★ 新規: 基準値・等号・必要数のスタイル */
+      .mat-qty-formula {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+      }
+      .mat-qty-base {
+        color: #888;
+        font-size: 11px;
+        font-weight: 400;
+      }
+      .mat-qty-sep {
+        color: #aaa;
+        font-size: 11px;
+      }
+      .mat-qty-result {
+        color: #1a1a1a;
+        font-weight: 700;
+      }
+      .mat-alt {
+        font-size: 11px;
+        color: #3a5aad;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding-left: 12px;
+      }
+      .mat-alt-connector {
+        font-size: 10px;
+        color: #9fa8da;
+        white-space: nowrap;
+      }
+      .imperial-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 10px;
+        font-weight: 600;
+        background: #fff8e1;
+        color: #e65100;
+        border: 1px solid #ffe082;
+        margin-top: 4px;
+        white-space: nowrap;
+      }
+      .imperial-qty {
+        font-size: 11px;
+        color: #795548;
+        margin-top: 3px;
+        display: flex;
+        align-items: center;
+        gap: 3px;
+      }
+      .imperial-qty-num {
+        font-weight: 700;
+        color: #e65100;
+      }
+      .skill-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 10px;
+        font-weight: 700;
+        margin-top: 4px;
+        white-space: nowrap;
+        border: 1px solid;
+      }
+      input.qty-input {
+        width: 72px;
+        padding: 5px 4px 5px 8px;
+        background: #f5f4f0;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        color: #1a1a1a;
+        font-size: 13px;
+        text-align: center;
+        outline: none;
+      }
+      input.qty-input:focus {
+        border-color: #888;
+        background: #fff;
+      }
+      .expand-btn {
+        padding: 5px 11px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        background: #fff;
+        color: #888;
+        font-size: 11px;
+        cursor: pointer;
+        transition: all 0.15s;
+        white-space: nowrap;
+      }
+      .expand-btn:hover {
+        border-color: #888;
+        color: #1a1a1a;
+      }
+      .expand-btn.open {
+        background: #1a1a1a;
+        color: #fff;
+        border-color: #1a1a1a;
+      }
+      .sub-row td {
+        background: #faf9f6;
+        padding: 10px 14px 12px 32px;
+        border-bottom: 1px solid #f0ede8;
+      }
+      .sub-group {
+        margin-bottom: 14px;
+      }
+      .sub-group:last-child {
+        margin-bottom: 0;
+      }
+      .sub-parent-label {
+        font-size: 11px;
+        color: #aaa;
+        margin-bottom: 7px;
+      }
+      .sub-parent-name {
+        color: #1a1a1a;
+        font-weight: 600;
+        font-size: 12px;
+      }
+      .sub-steps {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        padding-left: 8px;
+      }
+      .sub-step {
+        background: #fff;
+        border: 0.5px solid #e8e6e0;
+        border-radius: 6px;
+        padding: 7px 10px;
+        margin-bottom: 2px;
+      }
+      .proc-badge {
+        display: inline-block;
+        padding: 1px 7px;
+        border-radius: 4px;
+        font-size: 10px;
+        background: #e8eaf6;
+        color: #1a237e;
+        border: 1px solid #9fa8da;
+        margin-bottom: 4px;
+        font-weight: 600;
+      }
+      .step-mats {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
       .step-mat {
-        display: inline-flex; align-items: center; gap: 6px;
-        font-size: 12px; color: #555;
+        font-size: 12px;
+        color: #555;
+        display: flex;
+        gap: 5px;
+        align-items: center;
       }
-      .step-mat-name  { color: #333; white-space: nowrap; }
-      .smf-base { font-weight: 600; color: #1a1a1a; font-size: 12px; white-space: nowrap; }
-      .smf-op   { color: #bbb; font-size: 11px; }
-      .smf-mult { color: #888; font-size: 11px; white-space: nowrap; }
-      .smf-eq   { color: #bbb; font-size: 11px; }
-      .smf-need { font-weight: 700; color: #2e7d32; font-size: 12px; white-space: nowrap; }
-      .smf-need.empty { color: #ccc; font-weight: 400; }
-
-      /* 代替品行 */
+      .step-mat-qty {
+        color: #1a1a1a;
+        font-weight: 600;
+      }
       .step-mat-alt {
-        display: inline-flex; align-items: center; gap: 6px;
-        font-size: 11px; color: #3a5aad;
-        padding-left: 10px;
+        font-size: 11px;
+        color: #3a5aad;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding-left: 14px;
       }
-      .step-mat-alt-connector { color: #9fa8da; font-size: 10px; white-space: nowrap; }
-      .step-mat-alt-name  { color: #3a5aad; white-space: nowrap; }
-      .smaf-base { font-weight: 600; color: #3a5aad; font-size: 11px; white-space: nowrap; }
-      .smaf-op   { color: #bbb; font-size: 10px; }
-      .smaf-mult { color: #888; font-size: 10px; white-space: nowrap; }
-      .smaf-eq   { color: #bbb; font-size: 10px; }
-      .smaf-need { font-weight: 700; color: #3949ab; font-size: 11px; white-space: nowrap; }
-      .smaf-need.empty { color: #ccc; font-weight: 400; }
-      .step-mat-qty { color: #1a1a1a; font-weight: 600; }
-      .step-result { font-size: 12px; color: #2e7d32; font-weight: 600; margin-top: 5px; padding-top: 5px; border-top: 1px dashed #e0ddd5; }
-      .step-connector { text-align: left; padding-left: 2em; font-size: 12px; color: #1565c0; padding-top: 3px; padding-bottom: 3px; font-weight: 600; }
-      .state-msg { text-align: center; padding: 60px 20px; color: #bbb; font-size: 14px; }
-      .spinner { display: inline-block; width: 22px; height: 22px; border: 2px solid #eee; border-top-color: #888; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 10px; }
-      @keyframes spin { to { transform: rotate(360deg); } }
-      .lightbox { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 1000; align-items: center; justify-content: center; cursor: zoom-out; }
-      .lightbox.active { display: flex; }
-      .lightbox img { max-width: 90vw; max-height: 90vh; object-fit: contain; border-radius: 8px; box-shadow: 0 8px 40px rgba(0,0,0,0.5); }
-      .item-img img { cursor: zoom-in; transition: opacity 0.15s; }
-      .item-img img:hover { opacity: 0.85; }
-      @media (max-width: 600px) { header, .table-container { padding: 12px 16px; } .header-title { font-size: 16px; } }
+      .step-mat-alt-connector {
+        font-size: 10px;
+        color: #9fa8da;
+        white-space: nowrap;
+      }
+      .step-result {
+        font-size: 12px;
+        color: #2e7d32;
+        font-weight: 600;
+        margin-top: 5px;
+        padding-top: 5px;
+        border-top: 1px dashed #e0ddd5;
+      }
+      .step-connector {
+        text-align: center;
+        font-size: 12px;
+        color: #1565c0;
+        padding: 3px 0;
+        font-weight: 600;
+      }
+      .state-msg {
+        text-align: center;
+        padding: 60px 20px;
+        color: #bbb;
+        font-size: 14px;
+      }
+      .spinner {
+        display: inline-block;
+        width: 22px;
+        height: 22px;
+        border: 2px solid #eee;
+        border-top-color: #888;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin-bottom: 10px;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .lightbox {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+        cursor: zoom-out;
+      }
+      .lightbox.active {
+        display: flex;
+      }
+      .lightbox img {
+        max-width: 90vw;
+        max-height: 90vh;
+        object-fit: contain;
+        border-radius: 8px;
+        box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+      }
+      .item-img img {
+        cursor: zoom-in;
+        transition: opacity 0.15s;
+      }
+      .item-img img:hover {
+        opacity: 0.85;
+      }
+      /* ★ 数量列ヘッダーの説明ラベル */
+      .qty-formula-legend {
+        display: block;
+        font-size: 9px;
+        font-weight: 400;
+        color: #aaa;
+        margin-top: 2px;
+        letter-spacing: 0;
+      }
+      @media (max-width: 600px) {
+        header,
+        .table-container {
+          padding: 12px 16px;
+        }
+        .header-title {
+          font-size: 16px;
+        }
+      }
     </style>
   </head>
   <body>
@@ -157,20 +617,41 @@
 
     <div class="controls-row1">
       <div class="search-wrap">
-        <input type="text" id="search" placeholder="アイテム名・材料名・効果で検索..." />
-        <button class="search-clear-btn" id="search-clear-btn" onclick="clearSearch()" title="クリア">✕</button>
+        <input
+          type="text"
+          id="search"
+          placeholder="アイテム名・材料名・効果で検索..."
+        />
+        <button
+          class="search-clear-btn"
+          id="search-clear-btn"
+          onclick="clearSearch()"
+          title="クリア"
+        >
+          ✕
+        </button>
       </div>
       <div id="tag-buttons">
-        <button class="cat-btn active" onclick="setTag('all', this)">すべて</button>
+        <button class="cat-btn active" onclick="setTag('all', this)">
+          すべて
+        </button>
       </div>
     </div>
     <div class="controls-row2" id="cat-row" style="display: none">
-      <span style="font-size: 11px; color: #aaa; margin-right: 4px">カテゴリ：</span>
+      <span style="font-size: 11px; color: #aaa; margin-right: 4px"
+        >カテゴリ：</span
+      >
       <div id="cat-buttons"></div>
     </div>
 
-    <!-- 上に戻るボタン（画面右下固定・スクロールで表示） -->
-    <button id="scroll-top-btn" onclick="scrollToTop()" title="ページ上部へ戻る">▲ 上に戻る</button>
+    <!-- ★ 上に戻るボタン（画面右下固定・スクロールで表示） -->
+    <button
+      id="scroll-top-btn"
+      onclick="scrollToTop()"
+      title="ページ上部へ戻る"
+    >
+      ▲ 上に戻る
+    </button>
 
     <div id="lightbox" class="lightbox" onclick="closeLightbox()">
       <img id="lightbox-img" src="" alt="" />
@@ -186,7 +667,11 @@
         <thead id="table-head">
           <tr>
             <th style="width: 18%">アイテム名</th>
-            <th style="width: auto">製作材料</th>
+            <th style="width: auto">
+              製作材料
+              <!-- ★ 数量説明ラベル -->
+              <span class="qty-formula-legend">基準値 × 作成数 ＝ 必要数</span>
+            </th>
             <th style="width: 14%">🍽 効果 / 👑 皇室納品</th>
             <th style="width: 18%">製作できる都市 / 製作所Lv</th>
             <th style="width: 7%">作成個数</th>
@@ -205,9 +690,9 @@
     </div>
 
     <script>
-      const SUPABASE_URL = "https://qvdlqqlstohsxfdersqf.supabase.co";
-      const SUPABASE_ANON = "sb_publishable_QUM8K-ERXCQqi9TypCCRjg_QsoMuAT6";
-      // ★ 修正: 効果欄はシート種別に関係なく全シートで表示可能に変更
+      const SUPABASE_URL = "https://lqpkntzgtinjtqcpngzk.supabase.co";
+      const SUPABASE_ANON = "sb_publishable_FbsNwalcXrC7bbmsDZ553g_JtoGID9A";
+      const EFFECT_SHEET_NAMES = ["料理"];
       const IMPERIAL_SHEET_NAMES = ["料理", "錬金"];
       const { createClient } = supabase;
       const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -221,39 +706,64 @@
       const expanded = {};
 
       const SKILL_LEVEL_COLORS = {
-        "初級":  { bg: "#f5f4f0", color: "#888",    border: "#ddd"    },
-        "見習い":{ bg: "#e8f5e9", color: "#2e7d32", border: "#a5d6a7" },
-        "熟練":  { bg: "#e3f2fd", color: "#1565c0", border: "#90caf9" },
-        "専門":  { bg: "#fff3e0", color: "#e65100", border: "#ffcc80" },
-        "職人":  { bg: "#fce4ec", color: "#c62828", border: "#ef9a9a" },
-        "名匠":  { bg: "#ede7f6", color: "#4527a0", border: "#ce93d8" },
-        "道人":  { bg: "#fdf6e3", color: "#8d6e00", border: "#f5c842" },
+        初級: { bg: "#f5f4f0", color: "#888", border: "#ddd" },
+        見習い: { bg: "#e8f5e9", color: "#2e7d32", border: "#a5d6a7" },
+        熟練: { bg: "#e3f2fd", color: "#1565c0", border: "#90caf9" },
+        専門: { bg: "#fff3e0", color: "#e65100", border: "#ffcc80" },
+        職人: { bg: "#fce4ec", color: "#c62828", border: "#ef9a9a" },
+        名匠: { bg: "#ede7f6", color: "#4527a0", border: "#ce93d8" },
+        道人: { bg: "#fdf6e3", color: "#8d6e00", border: "#f5c842" },
       };
 
-      // 上に戻る
+      // ★ 上に戻る
       function scrollToTop() {
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
-      window.addEventListener("scroll", function () {
-        const btn = document.getElementById("scroll-top-btn");
-        if (window.scrollY > 200) btn.classList.add("visible");
-        else btn.classList.remove("visible");
-      }, { passive: true });
 
-      // ★ メイン材料欄用: ×N 形式
+      // ★ スクロール監視：200px超えたら表示
+      window.addEventListener(
+        "scroll",
+        function () {
+          const btn = document.getElementById("scroll-top-btn");
+          if (window.scrollY > 200) {
+            btn.classList.add("visible");
+          } else {
+            btn.classList.remove("visible");
+          }
+        },
+        { passive: true },
+      );
+
+      // ★ 数量フォーマット: 「基準値×作成数＝必要数」形式で返す
+      // qty=1(作成数1)のとき: 基準値のみ表示するシンプル版も考慮
       function fmtQty(raw, multiplier) {
         if (!raw || String(raw).trim() === "") return "";
         const s = String(raw).trim();
         const num = parseFloat(s);
-        if (!isNaN(num) && num > 0) return `×${Math.ceil(num * multiplier)}`;
+        if (!isNaN(num) && num > 0) {
+          const needed = Math.ceil(num * multiplier);
+          if (multiplier === 1) {
+            // 作成数1のときは基準値＝必要数なので「基準値＝必要数」
+            return `<span class="mat-qty-formula"><span class="mat-qty-base">${s}</span><span class="mat-qty-sep">＝</span><span class="mat-qty-result">×${needed}</span></span>`;
+          }
+          return `<span class="mat-qty-formula"><span class="mat-qty-base">${s}</span><span class="mat-qty-sep">×${multiplier}＝</span><span class="mat-qty-result">×${needed}</span></span>`;
+        }
         return s;
       }
 
-      // ★ 細分化ステップ材料用: 数値のみ返す（表示はHTML側で組み立て）
-      function calcNeeded(baseQty, multiplier) {
-        const num = parseFloat(String(baseQty || "").trim());
-        if (!isNaN(num) && num > 0) return Math.ceil(num * multiplier);
-        return null;
+      // ★ 細分化内部でも同じ形式で数量表示するヘルパー
+      function fmtStepQty(baseQty, multiplier) {
+        if (!baseQty || String(baseQty).trim() === "") return "";
+        const s = String(baseQty).trim();
+        const num = parseFloat(s);
+        if (!isNaN(num) && num > 0) {
+          const needed = Math.ceil(num * multiplier);
+          if (multiplier === 1) {
+            return `<span class="mat-qty-formula"><span class="mat-qty-base">${s}</span><span class="mat-qty-sep">＝</span><span class="mat-qty-result">×${needed}</span></span>`;
+          }
+          return `<span class="mat-qty-formula"><span class="mat-qty-base">${s}</span><span class="mat-qty-sep">×${multiplier}＝</span><span class="mat-qty-result">×${needed}</span></span>`;
+        }
+        return s;
       }
 
       function clearSearch() {
@@ -267,19 +777,24 @@
       function updateClearBtn() {
         const val = document.getElementById("search").value;
         const btn = document.getElementById("search-clear-btn");
-        val.length > 0 ? btn.classList.add("visible") : btn.classList.remove("visible");
+        val.length > 0
+          ? btn.classList.add("visible")
+          : btn.classList.remove("visible");
       }
 
       async function loadData() {
         try {
           const { data: sheetsData, error: sheetsError } = await sb
-            .from("sheets").select("id, name").order("sort_order");
+            .from("sheets")
+            .select("id, name")
+            .order("sort_order");
           if (sheetsError) throw sheetsError;
           SHEETS = (sheetsData || []).map((s) => s.name);
 
           const { data: recipes, error: recipesError } = await sb
             .from("recipes")
-            .select(`
+            .select(
+              `
               id, name, category, image_url, effect,
               imperial_rank, imperial_qty_min, imperial_qty_max,
               skill_level, skill_level_num,
@@ -293,7 +808,8 @@
                   recipe_step_mats(id, sort_order, mat_name, mat_qty, alt_connector, parent_mat_id)
                 )
               )
-            `)
+            `,
+            )
             .order("name");
           if (recipesError) throw recipesError;
 
@@ -303,7 +819,7 @@
 
           const now = new Date();
           document.getElementById("last-updated").textContent =
-            `最終更新: ${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+            `最終更新: ${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
         } catch (e) {
           document.getElementById("tbody").innerHTML =
             `<tr><td colspan="${COL_SPAN}" class="state-msg">⚠️ データの読み込みに失敗しました。<br>Supabaseの接続設定を確認してください。<br><small style="color:#ccc;">${e.message || ""}</small></td></tr>`;
@@ -313,11 +829,14 @@
 
       function parseRecipe(r) {
         const tag = r.sheets ? r.sheets.name : "";
+        const hasEffect = EFFECT_SHEET_NAMES.indexOf(tag) >= 0;
         const hasImperial = IMPERIAL_SHEET_NAMES.indexOf(tag) >= 0;
         const cities = (r.recipe_cities || [])
           .sort((a, b) => a.sort_order - b.sort_order)
           .map((c) => ({ name: c.city_name || "", level: c.city_level || "" }));
-        const allRawMats = (r.recipe_mats || []).sort((a, b) => a.sort_order - b.sort_order);
+        const allRawMats = (r.recipe_mats || []).sort(
+          (a, b) => a.sort_order - b.sort_order,
+        );
         const mats = allRawMats
           .filter((m) => !m.parent_mat_id)
           .map((m) => ({
@@ -338,8 +857,13 @@
             const steps = (sg.recipe_steps || [])
               .sort((a, b) => a.sort_order - b.sort_order)
               .map((step, si) => {
-                const stepTarget = Math.max(1, parseFloat(step.result_qty) || 1);
-                const allRawStepMats = (step.recipe_step_mats || []).sort((a, b) => a.sort_order - b.sort_order);
+                const stepTarget = Math.max(
+                  1,
+                  parseFloat(step.result_qty) || 1,
+                );
+                const allRawStepMats = (step.recipe_step_mats || []).sort(
+                  (a, b) => a.sort_order - b.sort_order,
+                );
                 const stepMats = allRawStepMats
                   .filter((sm) => !sm.parent_mat_id)
                   .map((sm) => ({
@@ -371,13 +895,21 @@
           name: r.name || "",
           category: r.category || "",
           image_url: r.image_url || "",
-          effect: r.effect || "",
-          imperial_rank:    hasImperial ? (r.imperial_rank    || "") : "",
-          imperial_qty_min: hasImperial ? (r.imperial_qty_min != null ? r.imperial_qty_min : null) : null,
-          imperial_qty_max: hasImperial ? (r.imperial_qty_max != null ? r.imperial_qty_max : null) : null,
-          skill_level:     r.skill_level     || "",
+          effect: hasEffect ? r.effect || "" : "",
+          imperial_rank: hasImperial ? r.imperial_rank || "" : "",
+          imperial_qty_min: hasImperial
+            ? r.imperial_qty_min != null
+              ? r.imperial_qty_min
+              : null
+            : null,
+          imperial_qty_max: hasImperial
+            ? r.imperial_qty_max != null
+              ? r.imperial_qty_max
+              : null
+            : null,
+          skill_level: r.skill_level || "",
           skill_level_num: r.skill_level_num != null ? r.skill_level_num : null,
-          recipe_proc:     r.recipe_proc     || "",
+          recipe_proc: r.recipe_proc || "",
           tag,
           cities,
           mats,
@@ -392,7 +924,9 @@
           const btn = document.createElement("button");
           btn.className = "cat-btn";
           btn.textContent = tag;
-          btn.onclick = function () { setTag(tag, this); };
+          btn.onclick = function () {
+            setTag(tag, this);
+          };
           wrap.appendChild(btn);
         });
       }
@@ -400,69 +934,111 @@
       function buildCatButtons(tag) {
         const catRow = document.getElementById("cat-row");
         const catWrap = document.getElementById("cat-buttons");
-        if (tag === "all") { catRow.style.display = "none"; currentCat = "all"; return; }
-        const cats = [...new Set(
-          allData.filter((r) => r.tag === tag).map((r) => r.category).filter(Boolean)
-        )].sort();
-        if (cats.length === 0) { catRow.style.display = "none"; currentCat = "all"; return; }
+        if (tag === "all") {
+          catRow.style.display = "none";
+          currentCat = "all";
+          return;
+        }
+        const cats = [
+          ...new Set(
+            allData
+              .filter((r) => r.tag === tag)
+              .map((r) => r.category)
+              .filter(Boolean),
+          ),
+        ].sort();
+        if (cats.length === 0) {
+          catRow.style.display = "none";
+          currentCat = "all";
+          return;
+        }
         catWrap.innerHTML = `<button class="cat-btn active" onclick="setCat('all',this)">すべて</button>`;
         cats.forEach((cat) => {
           const btn = document.createElement("button");
           btn.className = "cat-btn";
           btn.textContent = cat;
-          btn.onclick = function () { setCat(cat, this); };
+          btn.onclick = function () {
+            setCat(cat, this);
+          };
           catWrap.appendChild(btn);
         });
         catRow.style.display = "flex";
       }
 
       function setTag(tag, el) {
-        currentTag = tag; currentCat = "all";
-        document.querySelectorAll("#tag-buttons .cat-btn").forEach((b) => b.classList.remove("active"));
+        currentTag = tag;
+        currentCat = "all";
+        document
+          .querySelectorAll("#tag-buttons .cat-btn")
+          .forEach((b) => b.classList.remove("active"));
         el.classList.add("active");
-        buildCatButtons(tag); render();
+        buildCatButtons(tag);
+        render();
       }
 
       function setCat(cat, el) {
         currentCat = cat;
-        document.querySelectorAll("#cat-buttons .cat-btn").forEach((b) => b.classList.remove("active"));
-        el.classList.add("active"); render();
+        document
+          .querySelectorAll("#cat-buttons .cat-btn")
+          .forEach((b) => b.classList.remove("active"));
+        el.classList.add("active");
+        render();
       }
 
       function onQtyInput(key, el) {
         const v = Math.min(9999, Math.max(1, parseInt(el.value) || 1));
         quantities[key] = v;
-        if (el.value !== "" && (parseInt(el.value) < 1 || parseInt(el.value) > 9999)) el.value = v;
+        if (
+          el.value !== "" &&
+          (parseInt(el.value) < 1 || parseInt(el.value) > 9999)
+        )
+          el.value = v;
       }
 
       function onQtyChange(key, el) {
         const v = Math.min(9999, Math.max(1, parseInt(el.value) || 1));
-        quantities[key] = v; el.value = v; render();
+        quantities[key] = v;
+        el.value = v;
+        render();
       }
 
       const RANK_COLORS = {
-        "見習い": { bg: "#e8f5e9", color: "#2e7d32", border: "#a5d6a7" },
-        "熟練":   { bg: "#e3f2fd", color: "#1565c0", border: "#90caf9" },
-        "専門家": { bg: "#fff3e0", color: "#e65100", border: "#ffcc80" },
-        "職人":   { bg: "#fce4ec", color: "#c62828", border: "#ef9a9a" },
-        "名匠":   { bg: "#ede7f6", color: "#4527a0", border: "#ce93d8" },
-        "道人":   { bg: "#fdf6e3", color: "#8d6e00", border: "#f5c842" },
+        見習い: { bg: "#e8f5e9", color: "#2e7d32", border: "#a5d6a7" },
+        熟練: { bg: "#e3f2fd", color: "#1565c0", border: "#90caf9" },
+        専門家: { bg: "#fff3e0", color: "#e65100", border: "#ffcc80" },
+        職人: { bg: "#fce4ec", color: "#c62828", border: "#ef9a9a" },
+        名匠: { bg: "#ede7f6", color: "#4527a0", border: "#ce93d8" },
+        道人: { bg: "#fdf6e3", color: "#8d6e00", border: "#f5c842" },
       };
 
-      const BOX_SUFFIX = { "料理": "の料理箱", "錬金": "の薬品箱" };
+      const BOX_SUFFIX = { 料理: "の料理箱", 錬金: "の薬品箱" };
 
       function buildImperialHTML(r) {
-        if (!r.imperial_rank && r.imperial_qty_min == null && r.imperial_qty_max == null) return "";
+        if (
+          !r.imperial_rank &&
+          r.imperial_qty_min == null &&
+          r.imperial_qty_max == null
+        )
+          return "";
         let html = "";
         if (r.imperial_rank) {
-          const rc = RANK_COLORS[r.imperial_rank] || { bg: "#fff8e1", color: "#e65100", border: "#ffe082" };
+          const rc = RANK_COLORS[r.imperial_rank] || {
+            bg: "#fff8e1",
+            color: "#e65100",
+            border: "#ffe082",
+          };
           const suffix = BOX_SUFFIX[r.tag] || "";
           html += `<span class="imperial-badge" style="background:${rc.bg};color:${rc.color};border-color:${rc.border};">👑 ${r.imperial_rank + suffix}</span>`;
         }
-        const hasMin = r.imperial_qty_min != null, hasMax = r.imperial_qty_max != null;
+        const hasMin = r.imperial_qty_min != null,
+          hasMax = r.imperial_qty_max != null;
         if (hasMin || hasMax) {
-          const minStr = hasMin ? `<span class="imperial-qty-num">${r.imperial_qty_min}</span>` : `<span style="color:#bbb">—</span>`;
-          const maxStr = hasMax ? `<span class="imperial-qty-num">${r.imperial_qty_max}</span>` : `<span style="color:#bbb">—</span>`;
+          const minStr = hasMin
+            ? `<span class="imperial-qty-num">${r.imperial_qty_min}</span>`
+            : `<span style="color:#bbb">—</span>`;
+          const maxStr = hasMax
+            ? `<span class="imperial-qty-num">${r.imperial_qty_max}</span>`
+            : `<span style="color:#bbb">—</span>`;
           html += `<div class="imperial-qty">📦 １箱の入個数：${minStr}<span style="color:#aaa;margin:0 2px;">－上位：</span>${maxStr}</div>`;
         }
         return html;
@@ -470,8 +1046,13 @@
 
       function buildSkillBadgeHTML(r) {
         if (!r.skill_level) return "";
-        const sc = SKILL_LEVEL_COLORS[r.skill_level] || { bg: "#f5f4f0", color: "#888", border: "#ddd" };
-        const lvStr = r.skill_level_num != null ? ` Lv.${r.skill_level_num}` : "";
+        const sc = SKILL_LEVEL_COLORS[r.skill_level] || {
+          bg: "#f5f4f0",
+          color: "#888",
+          border: "#ddd",
+        };
+        const lvStr =
+          r.skill_level_num != null ? ` Lv.${r.skill_level_num}` : "";
         return `<span class="skill-badge" style="background:${sc.bg};color:${sc.color};border-color:${sc.border};">🎖 ${r.skill_level}${lvStr}</span>`;
       }
 
@@ -482,21 +1063,46 @@
             if (currentTag !== "all" && r.tag !== currentTag) return false;
             if (currentCat !== "all" && r.category !== currentCat) return false;
             if (q) {
-              const inName    = r.name.toLowerCase().includes(q);
-              const inMat     = r.mats.some((m) => m.name.toLowerCase().includes(q));
-              const inProc    = r.recipe_proc && r.recipe_proc.toLowerCase().includes(q);
-              const inSub     = r.subgroups.some((g) => g.parent.toLowerCase().includes(q) || g.steps.some((s) => s.mats.some((m) => m.name.toLowerCase().includes(q))));
-              const inEffect  = r.effect && r.effect.toLowerCase().includes(q);
-              const inCity    = r.cities && r.cities.some((c) => c.name.toLowerCase().includes(q));
-              const inRank    = r.imperial_rank && r.imperial_rank.toLowerCase().includes(q);
-              const inSkill   = r.skill_level && r.skill_level.toLowerCase().includes(q);
-              if (!inName && !inMat && !inProc && !inSub && !inEffect && !inCity && !inRank && !inSkill) return false;
+              const inName = r.name.toLowerCase().includes(q);
+              const inMat = r.mats.some((m) =>
+                m.name.toLowerCase().includes(q),
+              );
+              const inProc =
+                r.recipe_proc && r.recipe_proc.toLowerCase().includes(q);
+              const inSub = r.subgroups.some(
+                (g) =>
+                  g.parent.toLowerCase().includes(q) ||
+                  g.steps.some((s) =>
+                    s.mats.some((m) => m.name.toLowerCase().includes(q)),
+                  ),
+              );
+              const inEffect = r.effect && r.effect.toLowerCase().includes(q);
+              const inCity =
+                r.cities &&
+                r.cities.some((c) => c.name.toLowerCase().includes(q));
+              const inRank =
+                r.imperial_rank && r.imperial_rank.toLowerCase().includes(q);
+              const inSkill =
+                r.skill_level && r.skill_level.toLowerCase().includes(q);
+              if (
+                !inName &&
+                !inMat &&
+                !inProc &&
+                !inSub &&
+                !inEffect &&
+                !inCity &&
+                !inRank &&
+                !inSkill
+              )
+                return false;
             }
             return true;
           })
           .sort((a, b) => a.name.localeCompare(b.name, "ja"));
 
-        document.getElementById("result-info").textContent = rows.length ? `${rows.length}件のレシピを表示中` : "";
+        document.getElementById("result-info").textContent = rows.length
+          ? `${rows.length}件のレシピを表示中`
+          : "";
         const tbody = document.getElementById("tbody");
         tbody.innerHTML = "";
 
@@ -515,34 +1121,49 @@
 
           const imgHTML = r.image_url
             ? `<img src="${r.image_url}" alt="${r.name}" onclick="openLightbox(this.src)" onerror="this.parentNode.textContent='🍽'">`
-            : (r.tag === "料理" ? "🍽" : "🪑");
+            : r.tag === "料理"
+              ? "🍽"
+              : "🪑";
 
-          const cityHTML = r.cities && r.cities.length
-            ? r.cities.map((c) =>
-                `<div>・${c.name}${c.level ? `&nbsp;<span style="background:#e8eaf6;color:#3949ab;border:1px solid #9fa8da;border-radius:8px;padding:1px 6px;font-size:10px;white-space:nowrap;">Lv.${c.level}</span>` : ""}</div>`
-              ).join("")
-            : '<span style="color:#ddd">—</span>';
+          const cityHTML =
+            r.cities && r.cities.length
+              ? r.cities
+                  .map(
+                    (c) =>
+                      `<div>・${c.name}${c.level ? `&nbsp;<span style="background:#e8eaf6;color:#3949ab;border:1px solid #9fa8da;border-radius:8px;padding:1px 6px;font-size:10px;white-space:nowrap;">Lv.${c.level}</span>` : ""}</div>`,
+                  )
+                  .join("")
+              : '<span style="color:#ddd">—</span>';
 
           const skillBadgeHTML = buildSkillBadgeHTML(r);
           const imperialHTML = buildImperialHTML(r);
           let effectCell = "";
-          if (r.effect) effectCell += `<div class="effect-text">${r.effect.replace(/</g,"&lt;").replace(/>/g,"&gt;")}</div>`;
-          if (imperialHTML) effectCell += `<div style="margin-top:${r.effect ? "6px" : "0"}">${imperialHTML}</div>`;
-          if (!effectCell) effectCell = '<span style="color:#ddd;font-size:11px">—</span>';
+          if (r.effect)
+            effectCell += `<div class="effect-text">${r.effect.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`;
+          if (imperialHTML)
+            effectCell += `<div style="margin-top:${r.effect ? "6px" : "0"}">${imperialHTML}</div>`;
+          if (!effectCell)
+            effectCell = '<span style="color:#ddd;font-size:11px">—</span>';
 
-          const safeKey = key.replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+          const safeKey = key.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 
           const procBadgeHTML = r.recipe_proc
             ? `<div><span class="recipe-proc-badge">⚙ ${r.recipe_proc}</span></div>`
             : "";
 
-          // メイン材料欄は × 表記（基準量×作成数）
-          const matsHTML = r.mats.map((m) => {
-            const altHTML = (m.alts || []).map((a) =>
-              `<div class="mat-alt"><span class="mat-alt-connector">└ ${a.connector}</span><span>${a.name}</span><span class="mat-qty">${fmtQty(a.qty, qty)}</span></div>`
-            ).join("");
-            return `<div class="mat-item"><span>${m.name}</span><span class="mat-qty">${fmtQty(m.qty, qty)}</span></div>${altHTML}`;
-          }).join("");
+          // ★ fmtQty がHTMLを返すようになったので innerHTML として扱う
+          const matsHTML = r.mats
+            .map((m) => {
+              const qtyHTML = fmtQty(m.qty, qty);
+              const altHTML = (m.alts || [])
+                .map((a) => {
+                  const altQtyHTML = fmtQty(a.qty, qty);
+                  return `<div class="mat-alt"><span class="mat-alt-connector">└ ${a.connector}</span><span>${a.name}</span><span class="mat-qty">${altQtyHTML}</span></div>`;
+                })
+                .join("");
+              return `<div class="mat-item"><span>${m.name}</span><span class="mat-qty">${qtyHTML}</span></div>${altHTML}`;
+            })
+            .join("");
 
           tr.innerHTML = `
             <td><div class="item-cell"><div class="item-img">${imgHTML}</div><div>
@@ -561,89 +1182,85 @@
                 max="9999"
                 step="1"
                 value="${qty}"
-                data-key="${key.replace(/"/g,"&quot;")}"
+                data-key="${key.replace(/"/g, "&quot;")}"
                 oninput="onQtyInput(this.dataset.key,this)"
                 onchange="onQtyChange(this.dataset.key,this)"
                 onkeydown="if(event.key==='Enter'){onQtyChange(this.dataset.key,this);this.blur();}"
               >
             </td>
-            <td>${hasSub ? `<button class="expand-btn ${isOpen?"open":""}" onclick="expanded['${safeKey}']=!expanded['${safeKey}'];render()">${isOpen?"▲ 閉じる":"▼ 材料細分化"}</button>` : '<span style="color:#ddd;font-size:11px">—</span>'}</td>`;
+            <td>${hasSub ? `<button class="expand-btn ${isOpen ? "open" : ""}" onclick="expanded['${safeKey}']=!expanded['${safeKey}'];render()">${isOpen ? "▲ 閉じる" : "▼ 材料細分化"}</button>` : '<span style="color:#ddd;font-size:11px">—</span>'}</td>`;
           tbody.appendChild(tr);
 
           if (isOpen && hasSub) {
             const subtr = document.createElement("tr");
             subtr.className = "sub-row";
-
-            // ★ 細分化展開行: 基準量 × 作成数 ＝ 必要量 形式
-            const subHTML = r.subgroups.map((g) => {
-              const stepsHTML = g.steps.map((s, si) => {
-                const connectorHTML = si > 0 && s.connector ? `<div class="step-connector">${s.connector}</div>` : "";
-                const procHTML = s.proc ? `<span class="proc-badge">${s.proc}</span>` : "";
-                // stepTarget は result_qty（そのステップで何個作るか）
-                // 全体作成数 qty を掛ける
-                const stepMultiplier = s.stepTarget * qty;
-
-                // ★ ヘッダー: 左端から [基準値] × [作成数] ＝ [必要数]
-                const headerHTML = s.mats.length > 0
-                  ? `<div class="step-mat-header">
-                      <span class="smh-op">[基準値]個</span>
-                      <span class="smh-op">×</span>
-                      <span class="smh-op">[作成数]セット</span>
-                      <span class="smh-op">＝</span>
-                      <span class="smh-op">[必要数]必要</span>
-                    </div>`
-                  : "";
-
-                const matsHTML = s.mats.map((m) => {
-                  const needed = calcNeeded(m.baseQty, stepMultiplier);
-                  const needStr = needed !== null ? `${needed}必要` : "—";
-                  const needCls = needed !== null ? "smf-need" : "smf-need empty";
-                  const baseDisplay = m.baseQty ? `${m.baseQty}個` : "—";
-                  const altHTML = (m.alts || []).map((a) => {
-                    const altNeeded = calcNeeded(a.baseQty, stepMultiplier);
-                    const altNeedStr = altNeeded !== null ? `${altNeeded}必要` : "—";
-                    const altNeedCls = altNeeded !== null ? "smaf-need" : "smaf-need empty";
-                    const altBase = a.baseQty ? `${a.baseQty}個` : "—";
-                    return `<div class="step-mat-alt">
-                      <span class="step-mat-alt-connector">└ ${a.connector}</span>
-                      <span class="step-mat-alt-name">${a.name}</span>
-                      <span class="smaf-base">${altBase}</span>
-                      <span class="smaf-op">×</span>
-                      <span class="smaf-mult">${stepMultiplier}セット</span>
-                      <span class="smaf-eq">＝</span>
-                      <span class="${altNeedCls}">${altNeedStr}</span>
-                    </div>`;
-                  }).join("");
-                  return `<div class="step-mat">
-                    <span class="step-mat-name">${m.name}</span>
-                    <span class="smf-base">${baseDisplay}</span>
-                    <span class="smf-op">×</span>
-                    <span class="smf-mult">${stepMultiplier}セット</span>
-                    <span class="smf-eq">＝</span>
-                    <span class="${needCls}">${needStr}</span>
-                  </div>${altHTML}`;
-                }).join("");
-
-                const resultQtyDisplay = s.result_qty
-                  ? (() => { const rq = parseFloat(s.result_qty); return !isNaN(rq) && rq > 0 ? ` ×${Math.ceil(rq * qty)}セット` : ` ×${s.result_qty}セット`; })()
-                  : "";
-                const resultHTML = s.result_name ? `<div class="step-result">→ ${s.result_name}${resultQtyDisplay}</div>` : "";
-                return `${connectorHTML}<div class="sub-step">${procHTML}${headerHTML}<div class="step-mats">${matsHTML}</div>${resultHTML}</div>`;
-              }).join("");
-              return `<div class="sub-group"><div class="sub-parent-label">▸ <span class="sub-parent-name">${g.parent}</span> の作り方</div><div class="sub-steps">${stepsHTML}</div></div>`;
-            }).join("");
+            const subHTML = r.subgroups
+              .map((g) => {
+                const stepsHTML = g.steps
+                  .map((s, si) => {
+                    const connectorHTML =
+                      si > 0 && s.connector
+                        ? `<div class="step-connector">${s.connector}</div>`
+                        : "";
+                    const procHTML = s.proc
+                      ? `<span class="proc-badge">${s.proc}</span>`
+                      : "";
+                    const stepMultiplier = s.stepTarget * qty;
+                    // ★ 細分化内も基準値×作成数＝必要数の形式で表示
+                    const matsHTML = s.mats
+                      .map((m) => {
+                        const qtyHTML = fmtStepQty(m.baseQty, stepMultiplier);
+                        const altHTML = (m.alts || [])
+                          .map((a) => {
+                            const altQtyHTML = fmtStepQty(
+                              a.baseQty,
+                              stepMultiplier,
+                            );
+                            return `<div class="step-mat-alt"><span class="step-mat-alt-connector">└ ${a.connector}</span><span>${a.name}</span><span class="step-mat-qty">${altQtyHTML}</span></div>`;
+                          })
+                          .join("");
+                        return `<div class="step-mat"><span>${m.name}</span><span class="step-mat-qty">${qtyHTML}</span></div>${altHTML}`;
+                      })
+                      .join("");
+                    const resultQtyDisplay = s.result_qty
+                      ? (() => {
+                          const rq = parseFloat(s.result_qty);
+                          return !isNaN(rq) && rq > 0
+                            ? ` ×${Math.ceil(rq * qty)}`
+                            : ` ×${s.result_qty}`;
+                        })()
+                      : "";
+                    const resultHTML = s.result_name
+                      ? `<div class="step-result">→ ${s.result_name}${resultQtyDisplay}</div>`
+                      : "";
+                    return `${connectorHTML}<div class="sub-step">${procHTML}<div class="step-mats">${matsHTML}</div>${resultHTML}</div>`;
+                  })
+                  .join("");
+                return `<div class="sub-group"><div class="sub-parent-label">▸ <span class="sub-parent-name">${g.parent}</span> の作り方</div><div class="sub-steps">${stepsHTML}</div></div>`;
+              })
+              .join("");
             subtr.innerHTML = `<td colspan="${COL_SPAN}">${subHTML}</td>`;
             tbody.appendChild(subtr);
           }
         });
       }
 
-      function openLightbox(src) { document.getElementById("lightbox-img").src = src; document.getElementById("lightbox").classList.add("active"); }
-      function closeLightbox() { document.getElementById("lightbox").classList.remove("active"); }
-      document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });
+      function openLightbox(src) {
+        document.getElementById("lightbox-img").src = src;
+        document.getElementById("lightbox").classList.add("active");
+      }
+      function closeLightbox() {
+        document.getElementById("lightbox").classList.remove("active");
+      }
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeLightbox();
+      });
 
       const searchInput = document.getElementById("search");
-      searchInput.addEventListener("input", function () { updateClearBtn(); render(); });
+      searchInput.addEventListener("input", function () {
+        updateClearBtn();
+        render();
+      });
 
       loadData();
     </script>
